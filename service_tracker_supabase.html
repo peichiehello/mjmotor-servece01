@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>銘勁汽車 服務廠追蹤系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- ══════════════════════════════════════════════════════
+     第一次使用前，請到 Supabase 後台執行以下 SQL：
+     Dashboard → SQL Editor → 貼上後執行
+
+create table if not exists mj_settings (key text primary key, value text);
+create table if not exists mj_repairs (id bigint primary key, data jsonb);
+create table if not exists mj_loans   (id bigint primary key, data jsonb);
+create table if not exists mj_cares   (id bigint primary key, data jsonb);
+
+alter table mj_settings enable row level security;
+alter table mj_repairs  enable row level security;
+alter table mj_loans    enable row level security;
+alter table mj_cares    enable row level security;
+
+create policy "public_all" on mj_settings for all using (true) with check (true);
+create policy "public_all" on mj_repairs  for all using (true) with check (true);
+create policy "public_all" on mj_loans    for all using (true) with check (true);
+create policy "public_all" on mj_cares    for all using (true) with check (true);
+
+     ══════════════════════════════════════════════════════ -->
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;display:flex;height:100vh;overflow:hidden}
+:root{--red:#b91c1c;--sw:230px;--hh:56px}
+
+/* SIDEBAR */
+.sidebar{width:var(--sw);background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;overflow-x:hidden;transition:transform .25s}
+.logo{padding:16px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:10px}
+.logo-ico{width:30px;height:30px;border-radius:7px;background:rgba(185,28,28,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-ico svg{width:16px;height:16px;stroke:#ef4444;fill:none;stroke-width:2}
+.logo-brand{font-size:11px;color:#94a3b8}
+.logo-title{font-size:13px;font-weight:600;color:#f1f5f9}
+.nav-sec{padding:6px 0;border-bottom:1px solid #263248}
+.nav-lbl{padding:10px 20px 4px;font-size:10px;color:#64748b;font-weight:600;letter-spacing:.8px;text-transform:uppercase}
+.nb{width:100%;display:flex;align-items:center;gap:10px;padding:9px 20px;border:none;background:transparent;color:#94a3b8;cursor:pointer;font-size:12.5px;text-align:left;border-left:3px solid transparent;transition:all .15s;font-family:inherit}
+.nb:hover{background:rgba(185,28,28,.12);color:#f1f5f9}
+.nb.active{background:rgba(185,28,28,.18);color:#fff;border-left-color:#b91c1c;font-weight:600}
+.nb .ico{width:15px;height:15px;flex-shrink:0;opacity:.65}
+.nb.active .ico{opacity:1}
+.nb.sub{padding-left:36px;font-size:12px}
+.sf{margin-top:auto;padding:12px 20px;border-top:1px solid #334155;font-size:11px;color:#475569}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#f3f4f6}
+.header{height:var(--hh);background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0}
+.hbar{width:3px;height:22px;background:#b91c1c;border-radius:2px;flex-shrink:0}
+.hbc{font-size:11px;color:#9ca3af}
+.htitle{font-size:16px;font-weight:600;color:#111827}
+.hmenu{display:none;background:none;border:none;cursor:pointer;padding:8px;color:#374151;margin-left:auto}
+.hmenu svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.content{flex:1;overflow-y:auto;padding:20px}
+
+/* OVERLAY */
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
+.ov.show{display:block}
+@media(max-width:820px){
+  .sidebar{position:fixed;left:0;top:0;height:100vh;z-index:100;transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .hmenu{display:flex}
+  .content{padding:14px}
+  .fg,.fg.g3{grid-template-columns:1fr!important}
+  .f-grp.full{grid-column:1!important}
+  .modal{max-width:100%!important}
+  .adm-wrap{grid-template-columns:1fr!important}
+  .twrap{display:none}
+  .card-list{display:flex!important}
+}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;height:200px;gap:12px;color:#6b7280;font-size:14px}
+.spin{width:20px;height:20px;border:2px solid #e5e7eb;border-top-color:#b91c1c;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* CARDS */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:10px;margin-bottom:22px}
+.mod-card{background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;gap:10px}
+.mod-card:hover{border-color:#b91c1c}
+.mod-card.dim{opacity:.5;cursor:default}
+.cico{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.cico svg{width:15px;height:15px;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.cico.r{background:#fee2e2}.cico.r svg{stroke:#b91c1c}
+.cico.b{background:#dbeafe}.cico.b svg{stroke:#1d4ed8}
+.cname{font-size:12px;font-weight:700;color:#111827}
+.csub{font-size:10px;color:#6b7280}
+.badge{display:inline-flex;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.badge.on{background:#dcfce7;color:#166534}
+.badge.wip{background:#fef3c7;color:#92400e}
+.sec-title{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+
+/* FORM */
+.form-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:780px}
+.form-ttl{font-size:14px;font-weight:600;color:#111827;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.f-grp{display:flex;flex-direction:column;gap:4px}
+.f-grp.full{grid-column:1/-1}
+label{font-size:12px;font-weight:500;color:#374151}
+.req{color:#b91c1c}
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;color:#111827;background:#fff;font-family:inherit;transition:border .15s;min-height:44px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#b91c1c;box-shadow:0 0 0 2px rgba(185,28,28,.1)}
+.f-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+.btn{padding:11px 22px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;font-family:inherit;transition:all .15s;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn-p{background:#b91c1c;color:#fff}.btn-p:hover{background:#991b1b}
+.btn-s{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}.btn-s:hover{background:#e5e7eb}
+.btn-sm{padding:7px 14px;font-size:12px;min-height:36px}
+.btn-d{background:#fee2e2;color:#b91c1c}.btn-d:hover{background:#fecaca}
+.btn-g{background:#dcfce7;color:#166534}.btn-g:hover{background:#bbf7d0}
+
+/* TABLE */
+.tbl-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;max-width:1200px}
+.tbl-toolbar{padding:12px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
+.tbl-title{font-size:14px;font-weight:600;color:#111827;flex:1}
+.fil-sel{padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;color:#374151;background:#fff;cursor:pointer;font-family:inherit;min-height:40px}
+.twrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:9px 11px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+td{padding:9px 11px;border-bottom:1px solid #f3f4f6;color:#374151;white-space:nowrap;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafafa}
+.tbl-empty{padding:48px;text-align:center;color:#9ca3af;font-size:13px}
+.seqn{font-weight:600;color:#9ca3af;font-size:11px}
+.elink{color:#b91c1c;cursor:pointer;font-size:12px;text-decoration:underline;background:none;border:none;font-family:inherit;padding:4px 0;min-height:36px;display:inline-flex;align-items:center}
+
+/* PILLS */
+.pill{display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.pw{background:#fef3c7;color:#92400e}
+.pa{background:#dbeafe;color:#1e40af}
+.pd{background:#dcfce7;color:#166534}
+.uw{background:#fef3c7;color:#a16207;font-weight:700}
+.um{background:#ffedd5;color:#c2410c;font-weight:700}
+.uh{background:#fee2e2;color:#b91c1c;font-weight:700}
+
+/* STATS */
+.stats-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.sbox{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;min-width:90px}
+.sval{font-size:22px;font-weight:600;color:#111827}
+.slbl{font-size:11px;color:#6b7280;margin-top:2px}
+.sbox.r .sval{color:#b91c1c}
+.sbox.b .sval{color:#1d4ed8}
+.sbox.g .sval{color:#059669}
+
+/* MODAL */
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
+.modal-ttl{font-size:15px;font-weight:600;color:#111827;margin-bottom:16px}
+
+/* ADMIN */
+.adm-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:960px}
+.adm-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px}
+.adm-sec-ttl{font-size:13px;font-weight:600;color:#374151;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
+.plist{display:flex;flex-direction:column;gap:6px}
+.pitem{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f9fafb;border-radius:6px;font-size:13px;color:#374151}
+.add-row{display:flex;gap:8px;margin-top:8px}
+.add-row input{flex:1}
+
+/* VEHICLES */
+.veh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.veh-card{background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:10px;padding:14px}
+.veh-card.inuse{border-color:#bfdbfe;background:#eff6ff}
+.veh-plate{font-size:16px;font-weight:700;color:#111827}
+.veh-model{font-size:11px;color:#6b7280;margin-top:2px}
+.veh-mile{font-size:12px;color:#374151;margin-top:6px}
+.veh-add{border:2px dashed #e5e7eb;background:#fafafa;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:110px;border-radius:10px}
+.veh-add:hover{border-color:#b91c1c}
+.veh-add svg{width:22px;height:22px;stroke:#9ca3af;fill:none;stroke-width:2}
+
+/* CARD LIST (tablet) */
+.card-list{display:none;flex-direction:column;gap:10px;padding:12px}
+.rec-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px}
+.rc-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.rc-plate{font-size:15px;font-weight:700;color:#111827}
+.rc-sub{font-size:12px;color:#6b7280;margin-top:2px}
+.rc-body{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-bottom:12px}
+.rc-f{display:flex;flex-direction:column;gap:1px}
+.rc-lbl{font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.rc-val{font-size:13px;color:#374151;font-weight:500}
+.rc-act{display:flex;gap:8px;padding-top:10px;border-top:1px solid #f3f4f6;flex-wrap:wrap}
+.rc-extra{display:none;margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6;grid-template-columns:1fr 1fr;gap:6px 12px}
+.rc-extra.open{display:grid}
+.rc-more{font-size:11px;color:#6b7280;cursor:pointer;background:none;border:none;font-family:inherit;padding:0;text-decoration:underline}
+
+/* MISC */
+.info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;font-size:12px;color:#1e40af;margin-bottom:16px}
+.warn-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:12px;color:#92400e;margin-bottom:16px}
+.tab-bar{display:flex;gap:2px;background:#f3f4f6;border-radius:8px;padding:3px;margin-bottom:16px;width:fit-content}
+.tab-btn{padding:8px 18px;border-radius:6px;border:none;background:transparent;font-size:13px;font-weight:500;color:#6b7280;cursor:pointer;font-family:inherit;transition:all .15s;min-height:40px}
+.tab-btn.active{background:#fff;color:#111827;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.construction{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:#9ca3af;gap:12px}
+.construction svg{width:48px;height:48px;stroke:#d1d5db;fill:none;stroke-width:1.5}
+.construction h3{font-size:18px;color:#6b7280}
+</style>
+</head>
+<body>
+
+<div class="ov" id="ov"></div>
+
+<div class="sidebar" id="sidebar">
+  <div class="logo">
+    <div class="logo-ico"><svg viewBox="0 0 24 24"><path d="M5 17h14v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2z"/><path d="M20.772 10A1 1 0 0 0 20 9H4a1 1 0 0 0-.772.36L1 13h22z"/><circle cx="7" cy="15" r="1"/><circle cx="17" cy="15" r="1"/></svg></div>
+    <div><div class="logo-brand">銘勁汽車</div><div class="logo-title">服務廠追蹤系統</div></div>
+  </div>
+  <div class="nav-sec">
+    <div class="nav-lbl">主頁</div>
+    <button class="nb active" data-page="home" id="nb-home">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      系統總覽
+    </button>
+  </div>
+  <div class="nav-sec">
+    <div class="nav-lbl">代步車管理</div>
+    <button class="nb sub" data-page="repair-new" id="nb-repair-new">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      維修客戶登記
+    </button>
+    <button class="nb sub" data-page="repair-list" id="nb-repair-list">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/></svg>
+      維修客戶總表
+    </button>
+    <button class="nb sub" data-page="admin" id="nb-admin">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      後台設定
+    </button>
+  </div>
+  <div class="nav-sec">
+    <div class="nav-lbl">委修顧客關懷</div>
+    <button class="nb sub" data-page="care-new" id="nb-care-new">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      關懷登記
+    </button>
+    <button class="nb sub" data-page="care-list" id="nb-care-list">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      關懷明細
+    </button>
+  </div>
+  <div class="nav-sec">
+    <div class="nav-lbl">更多模組</div>
+    <button class="nb sub" data-page="soon">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M2 12h4m12 0h4"/></svg>
+      待料追蹤（建置中）
+    </button>
+    <button class="nb sub" data-page="soon">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M2 12h4m12 0h4"/></svg>
+      鈑噴進度（建置中）
+    </button>
+  </div>
+  <div class="sf">v7.0 · 顧客關係部</div>
+</div>
+
+<div class="main">
+  <div class="header">
+    <div class="hbar"></div>
+    <div style="flex:1">
+      <div class="hbc" id="breadcrumb">服務廠追蹤系統</div>
+      <div class="htitle" id="header-title">系統總覽</div>
+    </div>
+    <button class="hmenu" id="btn-menu">
+      <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="content" id="content"><div class="loading"><div class="spin"></div>載入中...</div></div>
+</div>
+
+<div class="modal-ov" id="modal" style="display:none">
+  <div class="modal"><div class="modal-ttl" id="modal-ttl"></div><div id="modal-body"></div></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// Supabase 設定
+// ══════════════════════════════════════════════════════
+const SUPA_URL = 'https://rniygnovzyptnawjrdqy.supabase.co';
+const SUPA_KEY = 'sb_publishable_9g8iELe4QJ2GLVcO8UoD_A_3mGexd03';
+
+const supa = {
+  async query(table, method='GET', body=null, params=''){
+    const url = `${SUPA_URL}/rest/v1/${table}${params}`;
+    const headers = {
+      'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${SUPA_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': method==='POST'?'return=representation':'return=representation'
+    };
+    const res = await fetch(url, {method, headers, body: body?JSON.stringify(body):null});
+    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+  },
+  async getSetting(key){ const r=await this.query('mj_settings',`GET`,null,`?key=eq.${key}`); return r&&r[0]?JSON.parse(r[0].value):null; },
+  async setSetting(key,val){ await this.query('mj_settings','POST',{key,value:JSON.stringify(val)},`?on_conflict=key`); },
+  async getAll(table){ const r=await this.query(table,'GET',null,'?order=id.asc'); return r?r.map(row=>row.data):[];},
+  async upsert(table,id,data){ await this.query(table,'POST',{id,data},`?on_conflict=id`); },
+  async delete(table,id){ await this.query(table,'DELETE',null,`?id=eq.${id}`); },
+};
+
+// ══════════════════════════════════════════════════════
+// State
+// ══════════════════════════════════════════════════════
+let repairs=[],loans=[],vehicles=[],staff=[],techs=[],cares=[],careSources=[],urgencyDefault='低';
+let repairFilter='all', careFilter='all', adminTab='staff';
+
+// ══════════════════════════════════════════════════════
+// Init & Data Loading
+// ══════════════════════════════════════════════════════
+async function init(){
+  try{
+    [repairs, loans, cares] = await Promise.all([
+      supa.getAll('mj_repairs'),
+      supa.getAll('mj_loans'),
+      supa.getAll('mj_cares'),
+    ]);
+    vehicles     = await supa.getSetting('vehicles')     || [{id:'v1',plate:'代步車-1',name:'Toyota Altis',model:'Altis 1.8',mileage:35200,active:true},{id:'v2',plate:'代步車-2',name:'Toyota Vios',model:'Vios 1.5',mileage:28400,active:true}];
+    staff        = await supa.getSetting('staff')        || ['陳美玲','林志豪','王雅惠','張建宏'];
+    techs        = await supa.getSetting('techs')        || ['李師傅','陳師傅','黃師傅','吳師傅'];
+    careSources  = await supa.getSetting('careSources')  || ['代步車','鈑噴維修'];
+    urgencyDefault = await supa.getSetting('urgencyDefault') || '低';
+    await autoScanCares();
+    go('home');
+  } catch(e){
+    console.error(e);
+    document.getElementById('content').innerHTML=`
+      <div style="padding:40px;max-width:600px">
+        <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:20px;color:#7f1d1d">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">⚠ 資料庫連線失敗</div>
+          <div style="font-size:13px;margin-bottom:16px">請先到 Supabase 後台執行 SQL 建立資料表。</div>
+          <div style="background:#fff;border-radius:6px;padding:14px;font-size:12px;font-family:monospace;line-height:1.8;color:#374151">
+            create table if not exists mj_settings (key text primary key, value text);<br>
+            create table if not exists mj_repairs (id bigint primary key, data jsonb);<br>
+            create table if not exists mj_loans (id bigint primary key, data jsonb);<br>
+            create table if not exists mj_cares (id bigint primary key, data jsonb);<br><br>
+            alter table mj_settings enable row level security;<br>
+            alter table mj_repairs enable row level security;<br>
+            alter table mj_loans enable row level security;<br>
+            alter table mj_cares enable row level security;<br><br>
+            create policy "public_all" on mj_settings for all using (true) with check (true);<br>
+            create policy "public_all" on mj_repairs for all using (true) with check (true);<br>
+            create policy "public_all" on mj_loans for all using (true) with check (true);<br>
+            create policy "public_all" on mj_cares for all using (true) with check (true);
+          </div>
+          <button onclick="location.reload()" style="margin-top:14px;padding:8px 18px;background:#b91c1c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">重新連線</button>
+        </div>
+      </div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════
+const today=()=>new Date().toISOString().split('T')[0];
+const p2=n=>n.toString().padStart(2,'0');
+const nowDT=()=>{const n=new Date();return `${n.getFullYear()}-${p2(n.getMonth()+1)}-${p2(n.getDate())} ${p2(n.getHours())}:${p2(n.getMinutes())}`;};
+const toLocal=dt=>(dt||'').replace(' ','T');
+const fmtDT=dt=>dt||'-';
+const gv=id=>document.getElementById(id)?.value.trim()||'';
+function showMsg(id,msg,color){
+  const el=document.getElementById(id);if(!el)return;
+  el.textContent=msg;el.style.color=color==='red'?'#b91c1c':'#059669';
+  setTimeout(()=>{if(el)el.textContent='';},4000);
+}
+function pill(s){
+  if(s==='wait')return '<span class="pill pw">等待中</span>';
+  if(s==='active')return '<span class="pill pa">借用中</span>';
+  return '<span class="pill pd">已還車</span>';
+}
+function carePill(s){
+  if(s==='待處理')return '<span class="pill pw">待處理</span>';
+  if(s==='處理中')return '<span class="pill pa">處理中</span>';
+  return '<span class="pill pd">已結案</span>';
+}
+function urgBadge(u){
+  if(u==='高')return '<span class="pill uh">高</span>';
+  if(u==='中')return '<span class="pill um">中</span>';
+  return '<span class="pill uw">低</span>';
+}
+function availVeh(){
+  const used=loans.filter(l=>l.status==='active').map(l=>l.vehicleId);
+  return vehicles.filter(v=>v.active&&!used.includes(v.id));
+}
+function calcWaitDays(){
+  const sorted=loans.filter(l=>l.status==='active'&&l.expectedReturn).map(l=>new Date(l.expectedReturn)).sort((a,b)=>a-b);
+  if(!sorted.length)return 0;
+  return Math.max(0,Math.ceil((sorted[0]-new Date())/86400000));
+}
+async function updateWaitDays(){
+  const sorted=loans.filter(l=>l.status==='active'&&l.expectedReturn).map(l=>new Date(l.expectedReturn)).sort((a,b)=>a-b);
+  const waiting=repairs.filter(r=>r.status==='wait');
+  waiting.forEach((r,i)=>{
+    const d=sorted[i%Math.max(sorted.length,1)];
+    r.waitDays=d?Math.max(0,Math.ceil((d-new Date())/86400000)):0;
+  });
+  await Promise.all(waiting.map(r=>supa.upsert('mj_repairs',r.id,r)));
+}
+
+// ══════════════════════════════════════════════════════
+// Navigation
+// ══════════════════════════════════════════════════════
+const TITLES={home:'系統總覽','repair-new':'維修客戶登記','repair-list':'維修客戶總表','care-new':'關懷登記','care-list':'關懷明細',admin:'後台設定',soon:'建置中'};
+const BCS={home:'服務廠追蹤系統','repair-new':'代步車管理','repair-list':'代步車管理','care-new':'委修顧客關懷','care-list':'委修顧客關懷',admin:'代步車管理',soon:'服務廠追蹤系統'};
+const RENDERS={home:renderHome,'repair-new':renderRepairNew,'repair-list':renderRepairList,'care-new':renderCareNew,'care-list':renderCareList,admin:renderAdmin,soon:renderSoon};
+
+function go(page){
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+  const nb=document.getElementById('nb-'+page);
+  if(nb)nb.classList.add('active');else document.getElementById('nb-home').classList.add('active');
+  document.getElementById('header-title').textContent=TITLES[page]||'';
+  document.getElementById('breadcrumb').textContent=BCS[page]||'';
+  document.getElementById('content').innerHTML=(RENDERS[page]||renderSoon)();
+}
+
+// ══════════════════════════════════════════════════════
+// HOME
+// ══════════════════════════════════════════════════════
+function renderHome(){
+  const wc=repairs.filter(r=>r.status==='wait').length;
+  const ac=loans.filter(l=>l.status==='active').length;
+  const av=availVeh().length;
+  return `
+  <p style="font-size:13px;color:#6b7280;margin-bottom:18px">服務廠追蹤系統入口，選擇下方模組進入。</p>
+  ${wc>0&&av>0?`<div class="info-box">💡 有 <strong>${wc}</strong> 位客戶等待代步車，目前可用 <strong>${av}</strong> 輛，請至維修客戶總表操作借出。</div>`:''}
+  ${wc>0&&av===0?`<div class="warn-box">⚠ 有 <strong>${wc}</strong> 位客戶等待，代步車全數借出（${ac} 輛使用中）。</div>`:''}
+  <div class="sec-title">代步車管理</div>
+  <div class="card-grid">
+    <div class="mod-card" data-action="go" data-val="repair-new">
+      <div class="cico r"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
+      <div><div class="cname">維修客戶登記</div><div class="csub">代步車需求登記</div></div>
+      <span class="badge on">運行中</span>
+    </div>
+    <div class="mod-card" data-action="go" data-val="repair-list">
+      <div class="cico r"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/></svg></div>
+      <div><div class="cname">維修客戶總表</div><div class="csub">借出／還車管理</div></div>
+      <span class="badge on">運行中</span>
+    </div>
+    <div class="mod-card" data-action="go" data-val="admin">
+      <div class="cico r"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+      <div><div class="cname">後台設定</div><div class="csub">人員與車輛管理</div></div>
+      <span class="badge on">運行中</span>
+    </div>
+  </div>
+  <div class="sec-title">委修顧客關懷</div>
+  <div class="card-grid">
+    <div class="mod-card" data-action="go" data-val="care-new">
+      <div class="cico r"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+      <div><div class="cname">關懷登記</div><div class="csub">手動新增關懷對象</div></div>
+      <span class="badge on">運行中</span>
+    </div>
+    <div class="mod-card" data-action="go" data-val="care-list">
+      <div class="cico r"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+      <div><div class="cname">關懷明細</div><div class="csub">所有關懷紀錄</div></div>
+      <span class="badge on">運行中</span>
+    </div>
+  </div>
+  <div class="sec-title">即將推出</div>
+  <div class="card-grid">
+    <div class="mod-card dim"><div class="cico b"><svg viewBox="0 0 24 24"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83"/></svg></div><div><div class="cname">待料追蹤</div><div class="csub">零件進度管理</div></div><span class="badge wip">建置中</span></div>
+    <div class="mod-card dim"><div class="cico b"><svg viewBox="0 0 24 24"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83"/></svg></div><div><div class="cname">鈑噴進度</div><div class="csub">鈑噴作業追蹤</div></div><span class="badge wip">建置中</span></div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// REPAIR NEW
+// ══════════════════════════════════════════════════════
+function renderRepairNew(){
+  const sOpts=staff.map(s=>`<option>${s}</option>`).join('');
+  const tOpts=techs.map(t=>`<option>${t}</option>`).join('');
+  return `
+  <div class="form-card">
+    <div class="form-ttl"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>維修客戶代步車需求登記</div>
+    <div class="fg">
+      <div class="f-grp"><label>客戶車號 <span class="req">*</span></label><input id="r-plate" placeholder="例：ABC-1234"></div>
+      <div class="f-grp"><label>客戶姓名 <span class="req">*</span></label><input id="r-name"></div>
+      <div class="f-grp"><label>客戶電話 <span class="req">*</span></label><input id="r-phone" type="tel"></div>
+      <div class="f-grp"><label>借用原因 <span class="req">*</span></label>
+        <select id="r-reason"><option value="">請選擇</option><option>待料</option><option>鈑噴</option><option>大保養</option><option>其他</option></select>
+      </div>
+      <div class="f-grp"><label>登記日 <span class="req">*</span></label><input id="r-regdate" type="date" value="${today()}"></div>
+      <div class="f-grp"><label>預計維修天數</label><input id="r-repairdays" type="number" min="0" placeholder="天"></div>
+      <div class="f-grp"><label>接待專員 <span class="req">*</span></label><select id="r-staff"><option value="">請選擇</option>${sOpts}</select></div>
+      <div class="f-grp"><label>負責技師 <span class="req">*</span></label><select id="r-tech"><option value="">請選擇</option>${tOpts}</select></div>
+      <div class="f-grp full"><label>備註</label><input id="r-note" placeholder="選填"></div>
+    </div>
+    <div class="f-actions">
+      <button class="btn btn-p" data-action="submitRepair">送出登記</button>
+      <button class="btn btn-s" data-action="clearRepairForm">清除</button>
+    </div>
+    <div id="r-msg" style="margin-top:10px;font-size:13px"></div>
+  </div>`;
+}
+function clearRepairForm(){ ['r-plate','r-name','r-phone','r-reason','r-repairdays','r-staff','r-tech','r-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); }
+async function submitRepair(){
+  const req=[['r-plate','車號'],['r-name','姓名'],['r-phone','電話'],['r-reason','借用原因'],['r-regdate','登記日'],['r-staff','接待專員'],['r-tech','負責技師']];
+  for(const[id,lbl]of req){if(!gv(id)){showMsg('r-msg','請填寫「'+lbl+'」','red');return;}}
+  const rec={id:Date.now(),seq:(repairs.length+1).toString().padStart(4,'0'),plate:gv('r-plate').toUpperCase(),name:gv('r-name'),phone:gv('r-phone'),reason:gv('r-reason'),regDate:gv('r-regdate'),repairDays:gv('r-repairdays'),staff:gv('r-staff'),tech:gv('r-tech'),note:gv('r-note'),status:'wait',loanId:null,waitDays:0,urgency:urgencyDefault,createdAt:new Date().toISOString()};
+  repairs.push(rec);
+  await supa.upsert('mj_repairs',rec.id,rec);
+  showMsg('r-msg','✓ 登記成功！序號：'+rec.seq,'green');
+  clearRepairForm();
+}
+
+// ══════════════════════════════════════════════════════
+// REPAIR LIST
+// ══════════════════════════════════════════════════════
+function renderRepairList(){
+  const cnt={wait:0,active:0,done:0};
+  repairs.forEach(r=>cnt[r.status]=(cnt[r.status]||0)+1);
+  const list=repairFilter==='all'?repairs:repairs.filter(r=>r.status===repairFilter);
+  const av=availVeh();
+  const wd=calcWaitDays();
+  return `
+  <div class="stats-bar">
+    <div class="sbox"><div class="sval">${repairs.length}</div><div class="slbl">總登記</div></div>
+    <div class="sbox r"><div class="sval">${cnt.wait||0}</div><div class="slbl">等待中</div></div>
+    <div class="sbox b"><div class="sval">${cnt.active||0}</div><div class="slbl">借用中</div></div>
+    <div class="sbox g"><div class="sval">${cnt.done||0}</div><div class="slbl">已還車</div></div>
+    <div class="sbox"><div class="sval">${av.length}</div><div class="slbl">可用代步車</div></div>
+    ${wd>0?`<div class="sbox r"><div class="sval">${wd}</div><div class="slbl">預計等待天</div></div>`:''}
+  </div>
+  <div class="tbl-card">
+    <div class="tbl-toolbar">
+      <div class="tbl-title">維修客戶總表</div>
+      <select class="fil-sel" data-change-action="setRepairFilter">
+        <option value="all" ${repairFilter==='all'?'selected':''}>全部</option>
+        <option value="wait" ${repairFilter==='wait'?'selected':''}>等待中</option>
+        <option value="active" ${repairFilter==='active'?'selected':''}>借用中</option>
+        <option value="done" ${repairFilter==='done'?'selected':''}>已還車</option>
+      </select>
+      <button class="btn btn-s btn-sm" data-action="go" data-val="repair-new">+ 新增</button>
+    </div>
+    ${list.length===0?'<div class="tbl-empty">目前沒有紀錄</div>':
+    `<div class="twrap"><table>
+      <thead><tr><th>序號</th><th>車號</th><th>客戶</th><th>電話</th><th>原因</th><th>登記日</th><th>維修天</th><th>預計等待天</th><th>緊急度</th><th>代步車</th><th>借出時間</th><th>預計還車</th><th>還車時間</th><th>借出里程</th><th>還車里程</th><th>接待</th><th>技師</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead>
+      <tbody>${list.map(r=>{
+        const loan=loans.find(l=>l.repairId===r.id&&(l.status==='active'||l.status==='done'))||loans.filter(l=>l.repairId===r.id).slice(-1)[0];
+        const veh=loan?vehicles.find(v=>v.id===loan.vehicleId):null;
+        let acts='';
+        if(r.status==='wait') acts=av.length>0?`<button class="btn btn-p btn-sm" data-action="openLoanFromRepair" data-id="${r.id}">借出</button>`:`<span style="font-size:11px;color:#9ca3af">無可用車</span>`;
+        else if(r.status==='active') acts=`<button class="btn btn-g btn-sm" data-action="openReturnFromRepair" data-id="${r.id}">還車</button>`;
+        return `<tr>
+          <td class="seqn">#${r.seq}</td><td><strong>${r.plate}</strong></td><td>${r.name}</td><td>${r.phone}</td><td>${r.reason}</td>
+          <td>${r.regDate||'-'}</td><td>${r.repairDays||'-'}</td>
+          <td>${r.status==='wait'&&r.waitDays?`<span style="color:#b91c1c;font-weight:600">${r.waitDays}天</span>`:'-'}</td>
+          <td><button data-action="cycleUrgency" data-id="${r.id}" style="background:none;border:none;cursor:pointer;padding:0">${urgBadge(r.urgency||urgencyDefault)}</button></td>
+          <td>${veh?`<strong>${veh.plate}</strong>`:'-'}</td>
+          <td>${loan?fmtDT(loan.loanDt):'-'}</td><td>${loan&&loan.expectedReturn?loan.expectedReturn:'-'}</td>
+          <td>${loan&&loan.returnDt?loan.returnDt:'<span style="color:#9ca3af">-</span>'}</td>
+          <td>${loan&&loan.outMile?loan.outMile+' km':'-'}</td><td>${loan&&loan.inMile?loan.inMile+' km':'-'}</td>
+          <td>${r.staff}</td><td>${r.tech}</td><td>${pill(r.status)}</td>
+          <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis">${r.note||'-'}</td>
+          <td style="display:flex;gap:5px;align-items:center">${acts}<button class="elink" data-action="openRepairEdit" data-id="${r.id}">編輯</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+    <div class="card-list">${list.map(r=>{
+      const loan=loans.find(l=>l.repairId===r.id&&(l.status==='active'||l.status==='done'))||loans.filter(l=>l.repairId===r.id).slice(-1)[0];
+      const veh=loan?vehicles.find(v=>v.id===loan.vehicleId):null;
+      let acts='';
+      if(r.status==='wait') acts=av.length>0?`<button class="btn btn-p btn-sm" data-action="openLoanFromRepair" data-id="${r.id}">借出</button>`:`<span style="font-size:12px;color:#9ca3af">無可用車</span>`;
+      else if(r.status==='active') acts=`<button class="btn btn-g btn-sm" data-action="openReturnFromRepair" data-id="${r.id}">還車</button>`;
+      return `<div class="rec-card">
+        <div class="rc-hdr">
+          <div><div class="rc-plate">${r.plate}</div><div class="rc-sub">${r.name}・${r.phone}</div></div>
+          <div style="display:flex;align-items:center;gap:6px">${pill(r.status)}<button data-action="cycleUrgency" data-id="${r.id}" style="background:none;border:none;cursor:pointer;padding:0">${urgBadge(r.urgency||urgencyDefault)}</button></div>
+        </div>
+        <div class="rc-body">
+          <div class="rc-f"><div class="rc-lbl">原因</div><div class="rc-val">${r.reason}</div></div>
+          <div class="rc-f"><div class="rc-lbl">登記日</div><div class="rc-val">${r.regDate||'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">維修天數</div><div class="rc-val">${r.repairDays?r.repairDays+'天':'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">代步車</div><div class="rc-val">${veh?veh.plate:'-'}</div></div>
+          ${r.status==='wait'&&r.waitDays?`<div class="rc-f"><div class="rc-lbl">預計等待</div><div class="rc-val" style="color:#b91c1c;font-weight:600">${r.waitDays}天</div></div>`:''}
+          <div class="rc-f"><div class="rc-lbl">接待</div><div class="rc-val">${r.staff}</div></div>
+        </div>
+        <div id="rex-${r.id}" class="rc-extra">
+          <div class="rc-f"><div class="rc-lbl">借出時間</div><div class="rc-val">${loan?fmtDT(loan.loanDt):'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">預計還車</div><div class="rc-val">${loan&&loan.expectedReturn?loan.expectedReturn:'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">還車時間</div><div class="rc-val">${loan&&loan.returnDt?loan.returnDt:'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">借出里程</div><div class="rc-val">${loan&&loan.outMile?loan.outMile+' km':'-'}</div></div>
+          <div class="rc-f"><div class="rc-lbl">還車里程</div><div class="rc-val">${loan&&loan.inMile?loan.inMile+' km':'-'}</div></div>
+          ${r.note?`<div class="rc-f" style="grid-column:1/-1"><div class="rc-lbl">備註</div><div class="rc-val">${r.note}</div></div>`:''}
+        </div>
+        <div class="rc-act">
+          ${acts}
+          <button class="elink" data-action="openRepairEdit" data-id="${r.id}">編輯</button>
+          <button class="rc-more" data-action="toggleExtra" data-id="${r.id}">更多資訊 ▾</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`}
+  </div>`;
+}
+function setRepairFilter(v){repairFilter=v;go('repair-list');}
+function toggleExtra(id){document.getElementById('rex-'+id)?.classList.toggle('open');}
+
+async function cycleUrgency(id){
+  const idx=repairs.findIndex(r=>r.id==id);if(idx<0)return;
+  const cycle={低:'中',中:'高',高:'低'};
+  repairs[idx].urgency=cycle[repairs[idx].urgency||'低'];
+  await supa.upsert('mj_repairs',repairs[idx].id,repairs[idx]);
+  go('repair-list');
+}
+
+function openRepairEdit(id){
+  const r=repairs.find(x=>x.id==id);if(!r)return;
+  const sOpts=staff.map(s=>`<option ${s===r.staff?'selected':''}>${s}</option>`).join('');
+  const tOpts=techs.map(t=>`<option ${t===r.tech?'selected':''}>${t}</option>`).join('');
+  document.getElementById('modal-ttl').textContent='編輯維修客戶 #'+r.seq;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="fg">
+      <div class="f-grp"><label>狀態</label><select id="er-status"><option value="wait" ${r.status==='wait'?'selected':''}>等待中</option><option value="active" ${r.status==='active'?'selected':''}>借用中</option><option value="done" ${r.status==='done'?'selected':''}>已還車</option></select></div>
+      <div class="f-grp"><label>預計維修天數</label><input id="er-repairdays" type="number" min="0" value="${r.repairDays||''}"></div>
+      <div class="f-grp"><label>接待專員</label><select id="er-staff">${sOpts}</select></div>
+      <div class="f-grp"><label>負責技師</label><select id="er-tech">${tOpts}</select></div>
+      <div class="f-grp full"><label>備註</label><input id="er-note" value="${r.note||''}"></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-p" data-action="saveRepairEdit" data-id="${id}">儲存</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+      <button class="btn btn-d btn-sm" data-action="deleteRepair" data-id="${id}" style="margin-left:auto">刪除</button>
+    </div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function saveRepairEdit(id){
+  const idx=repairs.findIndex(r=>r.id==id);if(idx<0)return;
+  repairs[idx]={...repairs[idx],status:gv('er-status'),repairDays:gv('er-repairdays'),staff:gv('er-staff')||repairs[idx].staff,tech:gv('er-tech')||repairs[idx].tech,note:gv('er-note')};
+  await supa.upsert('mj_repairs',repairs[idx].id,repairs[idx]);
+  closeModal();go('repair-list');
+}
+async function deleteRepair(id){
+  if(!confirm('確定刪除？'))return;
+  repairs=repairs.filter(r=>r.id!=id);
+  await supa.delete('mj_repairs',id);
+  closeModal();go('repair-list');
+}
+
+// 借出
+function openLoanFromRepair(repairId){
+  const r=repairs.find(x=>x.id==repairId);if(!r)return;
+  const av=availVeh();
+  const sOpts=staff.map(s=>`<option ${s===r.staff?'selected':''}>${s}</option>`).join('');
+  const vOpts=av.map(v=>`<option value="${v.id}">${v.plate}（${v.model||v.name}）</option>`).join('');
+  let expectVal='';
+  if(r.repairDays){const d=new Date();d.setDate(d.getDate()+parseInt(r.repairDays));expectVal=d.toISOString().split('T')[0];}
+  document.getElementById('modal-ttl').textContent='代步車借出登記';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="background:#f9fafb;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#374151">
+      <div style="font-weight:600">${r.plate}・${r.name}・${r.phone}</div>
+      <div style="color:#6b7280;margin-top:2px">${r.reason}｜預計維修 ${r.repairDays||'-'} 天</div>
+    </div>
+    <div class="fg">
+      <div class="f-grp"><label>借用代步車 <span class="req">*</span></label><select id="l-vehicleid"><option value="">請選擇</option>${vOpts}</select></div>
+      <div class="f-grp"><label>借出時間 <span class="req">*</span></label><input id="l-loandt" type="datetime-local" value="${toLocal(nowDT())}"></div>
+      <div class="f-grp"><label>預計還車日</label><input id="l-expectreturn" type="date" value="${expectVal}"></div>
+      <div class="f-grp"><label>借出里程數</label><input id="l-outmile" type="number" min="0" placeholder="公里"></div>
+      <div class="f-grp full"><label>接待專員 <span class="req">*</span></label><select id="l-staff"><option value="">請選擇</option>${sOpts}</select></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-p" data-action="submitLoanFromRepair" data-id="${repairId}">確認借出</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+    </div>
+    <div id="l-msg" style="margin-top:8px;font-size:13px"></div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function submitLoanFromRepair(repairId){
+  const req=[['l-vehicleid','借用代步車'],['l-loandt','借出時間'],['l-staff','接待專員']];
+  for(const[id,lbl]of req){if(!gv(id)){showMsg('l-msg','請填寫「'+lbl+'」','red');return;}}
+  const r=repairs.find(x=>x.id==repairId);if(!r)return;
+  const rec={id:Date.now(),seq:(loans.length+1).toString().padStart(4,'0'),repairId:Number(repairId),name:r.name,phone:r.phone,plate:r.plate,vehicleId:gv('l-vehicleid'),loanDt:gv('l-loandt').replace('T',' '),expectedReturn:gv('l-expectreturn'),returnDt:'',outMile:gv('l-outmile'),inMile:'',staff:gv('l-staff'),status:'active',createdAt:new Date().toISOString()};
+  const rIdx=repairs.findIndex(x=>x.id==repairId);
+  if(rIdx>=0){repairs[rIdx].status='active';repairs[rIdx].loanId=rec.id;await supa.upsert('mj_repairs',repairs[rIdx].id,repairs[rIdx]);}
+  loans.push(rec);
+  await supa.upsert('mj_loans',rec.id,rec);
+  await updateWaitDays();
+  closeModal();go('repair-list');
+}
+
+// 還車
+function openReturnFromRepair(repairId){
+  const r=repairs.find(x=>x.id==repairId);if(!r)return;
+  const loan=loans.find(l=>l.repairId==repairId&&l.status==='active');if(!loan)return;
+  const veh=vehicles.find(v=>v.id===loan.vehicleId);
+  document.getElementById('modal-ttl').textContent='確認還車';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="background:#f9fafb;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#374151">
+      <div style="font-weight:600">${r.plate}・${r.name}</div>
+      <div style="color:#6b7280;margin-top:2px">代步車：${veh?veh.plate:'-'}｜借出：${loan.loanDt||'-'}</div>
+    </div>
+    <div class="fg">
+      <div class="f-grp"><label>還車時間</label><input id="ret-dt" type="datetime-local" value="${toLocal(nowDT())}"></div>
+      <div class="f-grp"><label>還車里程數</label><input id="ret-mile" type="number" min="0" placeholder="公里"></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-g" data-action="confirmReturn" data-id="${loan.id}">確認還車</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+    </div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function confirmReturn(loanId){
+  const idx=loans.findIndex(l=>l.id==loanId);if(idx<0)return;
+  loans[idx].returnDt=gv('ret-dt').replace('T',' ')||nowDT();
+  loans[idx].inMile=gv('ret-mile');
+  loans[idx].status='done';
+  if(loans[idx].inMile){
+    const vIdx=vehicles.findIndex(v=>v.id===loans[idx].vehicleId);
+    if(vIdx>=0){vehicles[vIdx].mileage=parseInt(loans[idx].inMile);await supa.setSetting('vehicles',vehicles);}
+  }
+  const rIdx=repairs.findIndex(r=>r.id==loans[idx].repairId);
+  if(rIdx>=0){repairs[rIdx].status='done';await supa.upsert('mj_repairs',repairs[rIdx].id,repairs[rIdx]);}
+  await supa.upsert('mj_loans',loans[idx].id,loans[idx]);
+  await updateWaitDays();
+  closeModal();go('repair-list');
+}
+
+// ══════════════════════════════════════════════════════
+// CARE NEW
+// ══════════════════════════════════════════════════════
+async function autoScanCares(){
+  const now=new Date();let changed=false;
+  repairs.forEach(r=>{
+    if(r.status==='wait'||r.status==='active'){
+      const days=Math.floor((now-new Date(r.regDate))/86400000);
+      if(days>=15&&!cares.some(c=>c.sourceRepairId==r.id&&c.source==='auto')){
+        cares.push({id:Date.now()+Math.random(),seq:(cares.length+1).toString().padStart(4,'0'),plate:r.plate,name:r.name,phone:r.phone,reason:'等待代步車過久',careSource:'代步車',source:'auto',sourceRepairId:r.id,regDate:today(),staff:r.staff,careStatus:'待處理',careDt:'',careMethod:'',careNote:'',createdAt:new Date().toISOString()});
+        changed=true;
+      }
+    }
+  });
+  if(changed)await Promise.all(cares.filter(c=>c.source==='auto').map(c=>supa.upsert('mj_cares',Math.floor(c.id),c)));
+}
+
+function renderCareNew(){
+  const sOpts=staff.map(s=>`<option>${s}</option>`).join('');
+  const srcOpts=careSources.map(s=>`<option>${s}</option>`).join('');
+  return `
+  <div class="form-card">
+    <div class="form-ttl"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>委修顧客關懷登記</div>
+    <div class="fg">
+      <div class="f-grp"><label>客戶車號 <span class="req">*</span></label><input id="c-plate" placeholder="例：ABC-1234"></div>
+      <div class="f-grp"><label>客戶姓名 <span class="req">*</span></label><input id="c-name"></div>
+      <div class="f-grp"><label>客戶電話 <span class="req">*</span></label><input id="c-phone" type="tel"></div>
+      <div class="f-grp"><label>關懷原因 <span class="req">*</span></label>
+        <select id="c-reason"><option value="">請選擇</option><option>等待代步車過久</option><option>客訴</option><option>服務品質</option><option>其他</option></select>
+      </div>
+      <div class="f-grp"><label>來源 <span class="req">*</span></label><select id="c-src"><option value="">請選擇</option>${srcOpts}</select></div>
+      <div class="f-grp"><label>登記日 <span class="req">*</span></label><input id="c-regdate" type="date" value="${today()}"></div>
+      <div class="f-grp"><label>接待專員 <span class="req">*</span></label><select id="c-staff"><option value="">請選擇</option>${sOpts}</select></div>
+      <div class="f-grp"><label>關懷狀態</label><select id="c-status"><option value="待處理">待處理</option><option value="處理中">處理中</option><option value="已結案">已結案</option></select></div>
+      <div class="f-grp"><label>關懷日期時間</label><input id="c-caredt" type="datetime-local"></div>
+      <div class="f-grp"><label>關懷方式</label><select id="c-method"><option value="">請選擇</option><option>電話</option><option>LINE@</option><option>簡訊</option></select></div>
+      <div class="f-grp full"><label>關懷備註</label><input id="c-note" placeholder="關懷內容、客戶回應等"></div>
+    </div>
+    <div class="f-actions">
+      <button class="btn btn-p" data-action="submitCare">送出登記</button>
+      <button class="btn btn-s" data-action="clearCareForm">清除</button>
+    </div>
+    <div id="c-msg" style="margin-top:10px;font-size:13px"></div>
+  </div>`;
+}
+function clearCareForm(){['c-plate','c-name','c-phone','c-reason','c-src','c-staff','c-status','c-caredt','c-method','c-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); }
+async function submitCare(){
+  const req=[['c-plate','車號'],['c-name','姓名'],['c-phone','電話'],['c-reason','關懷原因'],['c-src','來源'],['c-regdate','登記日'],['c-staff','接待專員']];
+  for(const[id,lbl]of req){if(!gv(id)){showMsg('c-msg','請填寫「'+lbl+'」','red');return;}}
+  const rec={id:Date.now(),seq:(cares.length+1).toString().padStart(4,'0'),plate:gv('c-plate').toUpperCase(),name:gv('c-name'),phone:gv('c-phone'),reason:gv('c-reason'),careSource:gv('c-src'),source:'手動',sourceRepairId:null,regDate:gv('c-regdate'),staff:gv('c-staff'),careStatus:gv('c-status')||'待處理',careDt:gv('c-caredt').replace('T',' '),careMethod:gv('c-method'),careNote:gv('c-note'),createdAt:new Date().toISOString()};
+  cares.push(rec);
+  await supa.upsert('mj_cares',rec.id,rec);
+  showMsg('c-msg','✓ 登記成功！序號：'+rec.seq,'green');
+  clearCareForm();
+}
+
+// ══════════════════════════════════════════════════════
+// CARE LIST
+// ══════════════════════════════════════════════════════
+function renderCareList(){
+  const cnt={待處理:0,處理中:0,已結案:0};
+  cares.forEach(c=>cnt[c.careStatus]=(cnt[c.careStatus]||0)+1);
+  const list=careFilter==='all'?[...cares].reverse():cares.filter(c=>c.careStatus===careFilter).reverse();
+  return `
+  <div class="stats-bar">
+    <div class="sbox"><div class="sval">${cares.length}</div><div class="slbl">總關懷數</div></div>
+    <div class="sbox r"><div class="sval">${cnt['待處理']||0}</div><div class="slbl">待處理</div></div>
+    <div class="sbox b"><div class="sval">${cnt['處理中']||0}</div><div class="slbl">處理中</div></div>
+    <div class="sbox g"><div class="sval">${cnt['已結案']||0}</div><div class="slbl">已結案</div></div>
+  </div>
+  <div class="tbl-card">
+    <div class="tbl-toolbar">
+      <div class="tbl-title">關懷明細</div>
+      <select class="fil-sel" data-change-action="setCareFilter">
+        <option value="all" ${careFilter==='all'?'selected':''}>全部</option>
+        <option value="待處理" ${careFilter==='待處理'?'selected':''}>待處理</option>
+        <option value="處理中" ${careFilter==='處理中'?'selected':''}>處理中</option>
+        <option value="已結案" ${careFilter==='已結案'?'selected':''}>已結案</option>
+      </select>
+      <button class="btn btn-s btn-sm" data-action="go" data-val="care-new">+ 新增</button>
+    </div>
+    ${list.length===0?'<div class="tbl-empty">目前沒有紀錄</div>':
+    `<div class="twrap"><table>
+      <thead><tr><th>序號</th><th>車號</th><th>客戶</th><th>電話</th><th>關懷原因</th><th>來源</th><th>觸發</th><th>登記日</th><th>接待</th><th>狀態</th><th>關懷時間</th><th>關懷方式</th><th>關懷備註</th><th>操作</th></tr></thead>
+      <tbody>${list.map(c=>`<tr>
+        <td class="seqn">#${c.seq}</td><td><strong>${c.plate}</strong></td><td>${c.name}</td><td>${c.phone}</td>
+        <td>${c.reason}</td>
+        <td><span class="pill" style="background:#f0f9ff;color:#0369a1">${c.careSource||'-'}</span></td>
+        <td>${c.source==='auto'?'<span class="pill pw">系統自動</span>':'<span class="pill" style="background:#f3f4f6;color:#374151">手動</span>'}</td>
+        <td>${c.regDate||'-'}</td><td>${c.staff}</td><td>${carePill(c.careStatus)}</td>
+        <td>${c.careDt||'-'}</td><td>${c.careMethod||'-'}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${c.careNote||'-'}</td>
+        <td><button class="elink" data-action="openCareEdit" data-id="${c.id}">編輯</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <div class="card-list">${list.map(c=>`<div class="rec-card">
+      <div class="rc-hdr">
+        <div><div class="rc-plate">${c.plate}</div><div class="rc-sub">${c.name}・${c.phone}</div></div>
+        <div style="display:flex;align-items:center;gap:6px">${carePill(c.careStatus)}<span class="seqn">#${c.seq}</span></div>
+      </div>
+      <div class="rc-body">
+        <div class="rc-f"><div class="rc-lbl">關懷原因</div><div class="rc-val">${c.reason}</div></div>
+        <div class="rc-f"><div class="rc-lbl">來源</div><div class="rc-val">${c.careSource||'-'}</div></div>
+        <div class="rc-f"><div class="rc-lbl">觸發</div><div class="rc-val">${c.source==='auto'?'系統自動':'手動'}</div></div>
+        <div class="rc-f"><div class="rc-lbl">登記日</div><div class="rc-val">${c.regDate||'-'}</div></div>
+        ${c.careDt?`<div class="rc-f"><div class="rc-lbl">關懷時間</div><div class="rc-val">${c.careDt}</div></div>`:''}
+        ${c.careMethod?`<div class="rc-f"><div class="rc-lbl">關懷方式</div><div class="rc-val">${c.careMethod}</div></div>`:''}
+      </div>
+      <div class="rc-act"><button class="elink" data-action="openCareEdit" data-id="${c.id}">編輯</button></div>
+    </div>`).join('')}</div>`}
+  </div>`;
+}
+function setCareFilter(v){careFilter=v;go('care-list');}
+function openCareEdit(id){
+  const c=cares.find(x=>x.id==id);if(!c)return;
+  const sOpts=staff.map(s=>`<option ${s===c.staff?'selected':''}>${s}</option>`).join('');
+  const srcOpts=careSources.map(s=>`<option value="${s}" ${s===c.careSource?'selected':''}>${s}</option>`).join('');
+  document.getElementById('modal-ttl').textContent='編輯關懷紀錄 #'+c.seq;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="background:#f9fafb;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#374151">
+      <div style="font-weight:600">${c.plate}・${c.name}</div><div style="color:#6b7280;margin-top:2px">${c.reason}</div>
+    </div>
+    <div class="fg">
+      <div class="f-grp"><label>來源</label><select id="ec-src"><option value="">請選擇</option>${srcOpts}</select></div>
+      <div class="f-grp"><label>關懷狀態</label><select id="ec-status"><option value="待處理" ${c.careStatus==='待處理'?'selected':''}>待處理</option><option value="處理中" ${c.careStatus==='處理中'?'selected':''}>處理中</option><option value="已結案" ${c.careStatus==='已結案'?'selected':''}>已結案</option></select></div>
+      <div class="f-grp"><label>關懷日期時間</label><input id="ec-caredt" type="datetime-local" value="${toLocal(c.careDt||'')}"></div>
+      <div class="f-grp"><label>關懷方式</label><select id="ec-method"><option value="" ${!c.careMethod?'selected':''}>請選擇</option><option value="電話" ${c.careMethod==='電話'?'selected':''}>電話</option><option value="LINE@" ${c.careMethod==='LINE@'?'selected':''}>LINE@</option><option value="簡訊" ${c.careMethod==='簡訊'?'selected':''}>簡訊</option></select></div>
+      <div class="f-grp"><label>接待專員</label><select id="ec-staff">${sOpts}</select></div>
+      <div class="f-grp full"><label>關懷備註</label><textarea id="ec-note" rows="3" style="min-height:80px">${c.careNote||''}</textarea></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-p" data-action="saveCareEdit" data-id="${id}">儲存</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+      <button class="btn btn-d btn-sm" data-action="deleteCare" data-id="${id}" style="margin-left:auto">刪除</button>
+    </div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function saveCareEdit(id){
+  const idx=cares.findIndex(c=>c.id==id);if(idx<0)return;
+  cares[idx]={...cares[idx],careSource:gv('ec-src')||cares[idx].careSource,careStatus:gv('ec-status'),careDt:gv('ec-caredt').replace('T',' '),careMethod:gv('ec-method'),staff:gv('ec-staff')||cares[idx].staff,careNote:gv('ec-note')};
+  await supa.upsert('mj_cares',Math.floor(cares[idx].id),cares[idx]);
+  closeModal();go('care-list');
+}
+async function deleteCare(id){
+  if(!confirm('確定刪除？'))return;
+  cares=cares.filter(c=>c.id!=id);
+  await supa.delete('mj_cares',Math.floor(id));
+  closeModal();go('care-list');
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN
+// ══════════════════════════════════════════════════════
+function renderAdmin(){
+  return `
+  <div class="tab-bar">
+    <button class="tab-btn ${adminTab==='staff'?'active':''}" data-action="setAdminTab" data-val="staff">人員名單</button>
+    <button class="tab-btn ${adminTab==='vehicles'?'active':''}" data-action="setAdminTab" data-val="vehicles">車輛管理</button>
+    <button class="tab-btn ${adminTab==='settings'?'active':''}" data-action="setAdminTab" data-val="settings">系統設定</button>
+  </div>
+  ${adminTab==='staff'?renderAdminStaff():adminTab==='vehicles'?renderAdminVehicles():renderAdminSettings()}`;
+}
+function setAdminTab(t){adminTab=t;go('admin');}
+
+function renderAdminStaff(){
+  return `
+  <div class="adm-wrap">
+    <div class="adm-card">
+      <div class="adm-sec-ttl">接待專員名單</div>
+      <div class="plist">${staff.map((s,i)=>`<div class="pitem">${s}<button class="btn btn-d btn-sm" data-action="removePerson" data-val="staff" data-id="${i}">移除</button></div>`).join('')}</div>
+      <div class="add-row"><input id="add-staff" placeholder="新增接待專員姓名"><button class="btn btn-p btn-sm" data-action="addPerson" data-val="staff">新增</button></div>
+      <div id="staff-msg" style="font-size:12px;margin-top:6px"></div>
+    </div>
+    <div class="adm-card">
+      <div class="adm-sec-ttl">技師名單</div>
+      <div class="plist">${techs.map((t,i)=>`<div class="pitem">${t}<button class="btn btn-d btn-sm" data-action="removePerson" data-val="tech" data-id="${i}">移除</button></div>`).join('')}</div>
+      <div class="add-row"><input id="add-tech" placeholder="新增技師姓名"><button class="btn btn-p btn-sm" data-action="addPerson" data-val="tech">新增</button></div>
+      <div id="tech-msg" style="font-size:12px;margin-top:6px"></div>
+    </div>
+  </div>`;
+}
+async function addPerson(type){
+  const val=document.getElementById('add-'+type)?.value.trim();
+  if(!val){showMsg(type+'-msg','請輸入姓名','red');return;}
+  if(type==='staff'){if(staff.includes(val)){showMsg('staff-msg','已存在','red');return;}staff.push(val);await supa.setSetting('staff',staff);}
+  else{if(techs.includes(val)){showMsg('tech-msg','已存在','red');return;}techs.push(val);await supa.setSetting('techs',techs);}
+  go('admin');
+}
+async function removePerson(type,idx){
+  if(type==='staff'){staff.splice(idx,1);await supa.setSetting('staff',staff);}
+  else{techs.splice(idx,1);await supa.setSetting('techs',techs);}
+  go('admin');
+}
+
+function renderAdminVehicles(){
+  const usedIds=loans.filter(l=>l.status==='active').map(l=>l.vehicleId);
+  return `
+  <div class="veh-grid">
+    ${vehicles.map(v=>{
+      const inUse=usedIds.includes(v.id);
+      const loan=loans.find(l=>l.vehicleId===v.id&&l.status==='active');
+      return `<div class="veh-card ${inUse?'inuse':''}" style="opacity:${v.active?1:.55}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div><div class="veh-plate">${v.plate}</div><div class="veh-model">${v.model||'-'}</div></div>
+          ${inUse?`<span class="pill pa" style="font-size:10px">借用中</span>`:`<span class="pill pd" style="font-size:10px">${v.active?'可用':'停用'}</span>`}
+        </div>
+        <div class="veh-mile">里程：<strong>${v.mileage?v.mileage.toLocaleString()+' km':'-'}</strong></div>
+        ${inUse&&loan?`<div style="font-size:11px;color:#1e40af;margin-top:4px">借用人：${loan.name}</div>`:''}
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn btn-s btn-sm" data-action="openVehEdit" data-val="${v.id}">編輯</button>
+          <button class="btn btn-d btn-sm" data-action="toggleVeh" data-val="${v.id}">${v.active?'停用':'啟用'}</button>
+        </div>
+      </div>`;
+    }).join('')}
+    <div class="veh-add" data-action="openAddVeh">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <span style="font-size:12px;color:#9ca3af">新增車輛</span>
+    </div>
+  </div>`;
+}
+function openAddVeh(){
+  document.getElementById('modal-ttl').textContent='新增車輛';
+  document.getElementById('modal-body').innerHTML=`
+    <div class="fg">
+      <div class="f-grp"><label>車牌號碼 <span class="req">*</span></label><input id="av-plate" placeholder="例：ABC-1234"></div>
+      <div class="f-grp"><label>車輛名稱 <span class="req">*</span></label><input id="av-name" placeholder="例：Toyota Altis"></div>
+      <div class="f-grp"><label>車型</label><input id="av-model" placeholder="例：Altis 1.8"></div>
+      <div class="f-grp"><label>目前里程數（km）</label><input id="av-mile" type="number" min="0" placeholder="0"></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-p" data-action="addVehicle">新增</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+    </div>
+    <div id="av-msg" style="margin-top:8px;font-size:13px"></div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function addVehicle(){
+  const plate=gv('av-plate'),name=gv('av-name');
+  if(!plate||!name){showMsg('av-msg','請填寫車牌與車輛名稱','red');return;}
+  vehicles.push({id:'v'+Date.now(),plate:plate.toUpperCase(),name,model:gv('av-model'),mileage:parseInt(gv('av-mile'))||0,active:true});
+  await supa.setSetting('vehicles',vehicles);
+  closeModal();go('admin');
+}
+function openVehEdit(id){
+  const v=vehicles.find(x=>x.id===id);if(!v)return;
+  document.getElementById('modal-ttl').textContent='編輯車輛資訊';
+  document.getElementById('modal-body').innerHTML=`
+    <div class="fg">
+      <div class="f-grp"><label>車牌號碼</label><input id="ev-plate" value="${v.plate}"></div>
+      <div class="f-grp"><label>車輛名稱</label><input id="ev-name" value="${v.name}"></div>
+      <div class="f-grp"><label>車型</label><input id="ev-model" value="${v.model||''}"></div>
+      <div class="f-grp"><label>目前里程數（km）</label><input id="ev-mile" type="number" value="${v.mileage||0}"></div>
+    </div>
+    <div class="f-actions" style="margin-top:14px">
+      <button class="btn btn-p" data-action="saveVehEdit" data-val="${id}">儲存</button>
+      <button class="btn btn-s" data-action="closeModal">取消</button>
+    </div>`;
+  document.getElementById('modal').style.display='flex';
+}
+async function saveVehEdit(id){
+  const idx=vehicles.findIndex(v=>v.id===id);if(idx<0)return;
+  vehicles[idx]={...vehicles[idx],plate:gv('ev-plate').toUpperCase()||vehicles[idx].plate,name:gv('ev-name')||vehicles[idx].name,model:gv('ev-model'),mileage:parseInt(gv('ev-mile'))||vehicles[idx].mileage};
+  await supa.setSetting('vehicles',vehicles);closeModal();go('admin');
+}
+async function toggleVeh(id){
+  const idx=vehicles.findIndex(v=>v.id===id);if(idx<0)return;
+  vehicles[idx].active=!vehicles[idx].active;
+  await supa.setSetting('vehicles',vehicles);go('admin');
+}
+
+function renderAdminSettings(){
+  return `
+  <div class="adm-wrap">
+    <div class="adm-card">
+      <div class="adm-sec-ttl">關懷來源管理</div>
+      <div class="plist">${careSources.map((s,i)=>`<div class="pitem">${s}<button class="btn btn-d btn-sm" data-action="removeCareSource" data-id="${i}">移除</button></div>`).join('')}</div>
+      <div class="add-row"><input id="add-caresrc" placeholder="新增來源名稱"><button class="btn btn-p btn-sm" data-action="addCareSource">新增</button></div>
+      <div id="caresrc-msg" style="font-size:12px;margin-top:6px"></div>
+    </div>
+    <div class="adm-card">
+      <div class="adm-sec-ttl">緊急度預設值</div>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">新增維修客戶時自動套用，可在總表點擊切換。</p>
+      <div class="f-grp">
+        <label>預設緊急度</label>
+        <select id="urgency-sel" data-change-action="setUrgencyDefault">
+          <option value="低" ${urgencyDefault==='低'?'selected':''}>低（黃）</option>
+          <option value="中" ${urgencyDefault==='中'?'selected':''}>中（橘）</option>
+          <option value="高" ${urgencyDefault==='高'?'selected':''}>高（紅）</option>
+        </select>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;color:#6b7280">目前預設：</span>${urgBadge(urgencyDefault)}
+      </div>
+      <div id="urgency-msg" style="font-size:12px;margin-top:8px"></div>
+    </div>
+  </div>`;
+}
+async function addCareSource(){
+  const val=document.getElementById('add-caresrc')?.value.trim();
+  if(!val){showMsg('caresrc-msg','請輸入來源名稱','red');return;}
+  if(careSources.includes(val)){showMsg('caresrc-msg','已存在','red');return;}
+  careSources.push(val);await supa.setSetting('careSources',careSources);go('admin');
+}
+async function removeCareSource(idx){
+  careSources.splice(idx,1);await supa.setSetting('careSources',careSources);go('admin');
+}
+async function setUrgencyDefault(val){
+  urgencyDefault=val;await supa.setSetting('urgencyDefault',urgencyDefault);
+  showMsg('urgency-msg','✓ 已儲存','green');
+  setTimeout(()=>go('admin'),800);
+}
+
+// ══════════════════════════════════════════════════════
+// MISC
+// ══════════════════════════════════════════════════════
+function renderSoon(){return `<div class="construction"><svg viewBox="0 0 24 24"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg><h3>建置中</h3><p>此模組開發中，敬請期待</p></div>`;}
+function closeModal(){document.getElementById('modal').style.display='none';}
+
+// ══════════════════════════════════════════════════════
+// EVENT DELEGATION
+// ══════════════════════════════════════════════════════
+function handleAction(el){
+  if(!el)return;
+  const a=el.dataset.action;
+  const id=el.dataset.id!==undefined?(isNaN(el.dataset.id)?el.dataset.id:Number(el.dataset.id)):undefined;
+  const val=el.dataset.val;
+  const actions={
+    go:()=>go(val),
+    submitRepair,clearRepairForm,
+    openRepairEdit:()=>openRepairEdit(id),saveRepairEdit:()=>saveRepairEdit(id),deleteRepair:()=>deleteRepair(id),
+    openLoanFromRepair:()=>openLoanFromRepair(id),submitLoanFromRepair:()=>submitLoanFromRepair(id),
+    openReturnFromRepair:()=>openReturnFromRepair(id),confirmReturn:()=>confirmReturn(id),
+    cycleUrgency:()=>cycleUrgency(id),toggleExtra:()=>toggleExtra(id),
+    submitCare,clearCareForm,
+    openCareEdit:()=>openCareEdit(id),saveCareEdit:()=>saveCareEdit(id),deleteCare:()=>deleteCare(id),
+    setAdminTab:()=>setAdminTab(val),
+    addPerson:()=>addPerson(val),removePerson:()=>removePerson(val,id),
+    openAddVeh,addVehicle,openVehEdit:()=>openVehEdit(val),saveVehEdit:()=>saveVehEdit(val),toggleVeh:()=>toggleVeh(val),
+    addCareSource,removeCareSource:()=>removeCareSource(id),
+    closeModal,
+  };
+  if(actions[a]) actions[a]();
+}
+
+document.getElementById('ov').addEventListener('click',()=>{
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('ov').classList.remove('show');
+});
+document.getElementById('btn-menu').addEventListener('click',()=>{
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('ov').classList.add('show');
+});
+document.getElementById('modal').addEventListener('click',e=>{
+  if(e.target.id==='modal'){closeModal();return;}
+  handleAction(e.target.closest('[data-action]'));
+});
+document.getElementById('sidebar').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-page]');
+  if(!btn)return;
+  go(btn.dataset.page);
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('ov').classList.remove('show');
+});
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-action]');
+  if(el&&!el.closest('#modal'))handleAction(el);
+});
+document.addEventListener('change',e=>{
+  const a=e.target.dataset.changeAction;
+  if(!a)return;
+  const v=e.target.value;
+  const map={setRepairFilter,setCareFilter,setAdminTab,setUrgencyDefault};
+  if(map[a])map[a](v);
+});
+
+init();
+</script>
+</body>
+</html>
